@@ -1,6 +1,7 @@
 import requests
 import smtplib
 import os
+import re
 from email.mime.text import MIMEText
 from datetime import datetime
 
@@ -13,28 +14,49 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-# =========================
-# YOUR PROFILE
-# =========================
+# ==========================================
+# YOUR PROFILE (FROM YOUR RESUME)
+# ==========================================
 
-ENGINEERING_KEYWORDS = [
-    "frontend engineer",
-    "frontend developer",
-    "software engineer",
-    "software developer",
-    "fullstack engineer",
-    "fullstack developer",
-    "react engineer",
-    "react developer"
+YOUR_EXPERIENCE = 3.5
+
+ALLOWED_STACK = [
+    "react",
+    "next",
+    "javascript",
+    "typescript",
+    "frontend",
+    "front-end",
+    "fullstack",
+    "full stack",
+    "node"
 ]
 
-EXCLUDE = [
-    "recruiter",
-    "designer",
+REJECT_STACK = [
+    "react native",
+    "angular",
+    "vue native",
+    "ios",
+    "android",
+    "swift",
+    "kotlin",
+    "c++",
+    "embedded",
+    "firmware",
+    "php",
+    ".net",
+    "golang",
+    "rust",
+    "backend only"
+]
+
+REJECT_TITLES = [
+    "senior",
+    "staff",
+    "principal",
+    "lead",
     "manager",
-    "marketing",
-    "sales",
-    "hr"
+    "architect"
 ]
 
 PREFERRED_LOCATIONS = [
@@ -45,231 +67,103 @@ PREFERRED_LOCATIONS = [
     "bangalore",
     "uae",
     "dubai",
-    "germany",
     "netherlands",
+    "germany",
     "canada",
-    "japan",
     "uk"
 ]
 
-# =========================
-# FILTER
-# =========================
 
-def valid(title):
+# ==========================================
+# EXPERIENCE DETECTION
+# ==========================================
 
-    title = title.lower()
+def extract_experience(text):
 
-    if any(x in title for x in EXCLUDE):
-        return False
+    text = text.lower()
 
-    if any(x in title for x in ENGINEERING_KEYWORDS):
-        return True
+    matches = re.findall(r'(\d+)\+?\s*years', text)
 
-    return False
+    if matches:
+        return int(matches[0])
+
+    return 2
 
 
-# =========================
-# SCORING SYSTEM
-# =========================
+# ==========================================
+# PERFECT MATCH FILTER
+# ==========================================
 
-def score_job(title, company, location):
+def is_perfect_match(title, company, location):
 
     text = f"{title} {company} {location}".lower()
+
+    # Reject unwanted tech
+    for bad in REJECT_STACK:
+        if bad in text:
+            return False
+
+    # Reject senior roles
+    for bad in REJECT_TITLES:
+        if bad in title.lower():
+            return False
+
+    # Must match your stack
+    if not any(skill in text for skill in ALLOWED_STACK):
+        return False
+
+    # Experience check
+    exp = extract_experience(text)
+
+    if exp > 4:
+        return False
+
+    return True
+
+
+# ==========================================
+# SMART SCORING
+# ==========================================
+
+def calculate_score(title, company, location):
+
+    text = f"{title} {company} {location}".lower()
+
     score = 0
+
+    if "react" in text:
+        score += 40
+
+    if "next" in text:
+        score += 35
 
     if "frontend" in text:
         score += 30
 
-    if "react" in text:
-        score += 30
+    if "fullstack" in text:
+        score += 25
 
-    if "next" in text:
+    if "node" in text:
         score += 20
 
-    if "fullstack" in text:
+    if "typescript" in text:
         score += 15
 
     if "remote" in location.lower():
-        score += 30
+        score += 40
 
     if any(loc in location.lower() for loc in PREFERRED_LOCATIONS):
         score += 20
 
-    if any(x in company.lower() for x in ["tech", "ai", "labs", "cloud"]):
+    if any(x in company.lower() for x in ["tech", "labs", "ai", "cloud"]):
         score += 10
 
-    if "visa" in text or "sponsor" in text:
-        score += 25
-
-    return min(score, 100)
+    return score
 
 
-# =========================
-# LINKEDIN
-# =========================
-
-def fetch_linkedin():
-
-    print("LinkedIn...")
-
-    for keyword in ENGINEERING_KEYWORDS:
-
-        url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keyword}&location=Remote&start=0"
-
-        try:
-
-            res = requests.get(url, headers=HEADERS)
-
-            parts = res.text.split('href="')
-
-            for part in parts:
-
-                if "/jobs/view/" in part:
-
-                    link = part.split('"')[0]
-
-                    jobs.append({
-                        "company": "LinkedIn Company",
-                        "role": keyword,
-                        "location": "Remote",
-                        "link": link,
-                        "score": score_job(keyword, "LinkedIn", "Remote")
-                    })
-
-        except:
-            pass
-
-
-# =========================
-# GREENHOUSE
-# =========================
-
-def fetch_greenhouse():
-
-    print("Greenhouse...")
-
-    companies = [
-        "stripe",
-        "shopify",
-        "vercel",
-        "coinbase",
-        "airbnb",
-        "razorpay",
-        "swiggy",
-        "postman",
-        "careem",
-        "talabat",
-        "noon"
-    ]
-
-    for company in companies:
-
-        url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
-
-        try:
-
-            res = requests.get(url)
-            data = res.json()
-
-            for job in data["jobs"]:
-
-                title = job["title"]
-                location = job["location"]["name"]
-                link = job["absolute_url"]
-
-                if valid(title):
-
-                    jobs.append({
-                        "company": company.capitalize(),
-                        "role": title,
-                        "location": location,
-                        "link": link,
-                        "score": score_job(title, company, location)
-                    })
-
-        except:
-            pass
-
-
-# =========================
-# LEVER (STARTUPS)
-# =========================
-
-def fetch_lever():
-
-    print("Lever...")
-
-    companies = [
-        "figma",
-        "supabase",
-        "vercel",
-        "sourcegraph"
-    ]
-
-    for company in companies:
-
-        url = f"https://api.lever.co/v0/postings/{company}?mode=json"
-
-        try:
-
-            res = requests.get(url)
-            data = res.json()
-
-            for job in data:
-
-                title = job["text"]
-                location = job["categories"]["location"]
-                link = job["hostedUrl"]
-
-                if valid(title):
-
-                    jobs.append({
-                        "company": company.capitalize(),
-                        "role": title,
-                        "location": location,
-                        "link": link,
-                        "score": score_job(title, company, location)
-                    })
-
-        except:
-            pass
-
-
-# =========================
-# REMOTIVE
-# =========================
-
-def fetch_remotive():
-
-    print("Remotive...")
-
-    try:
-
-        res = requests.get("https://remotive.com/api/remote-jobs")
-        data = res.json()
-
-        for job in data["jobs"]:
-
-            title = job["title"]
-
-            if valid(title):
-
-                jobs.append({
-                    "company": job["company_name"],
-                    "role": title,
-                    "location": job["candidate_required_location"],
-                    "link": job["url"],
-                    "score": score_job(title, job["company_name"], job["candidate_required_location"])
-                })
-
-    except:
-        pass
-
-
-# =========================
+# ==========================================
 # REMOTEOK
-# =========================
+# ==========================================
 
 def fetch_remoteok():
 
@@ -285,28 +179,119 @@ def fetch_remoteok():
             if isinstance(job, dict):
 
                 title = job.get("position", "")
+                company = job.get("company", "")
+                location = "Remote"
+                link = "https://remoteok.com" + job.get("url", "")
 
-                if valid(title):
+                if is_perfect_match(title, company, location):
+
+                    score = calculate_score(title, company, location)
 
                     jobs.append({
-                        "company": job.get("company", ""),
+                        "company": company,
                         "role": title,
-                        "location": "Remote",
-                        "link": "https://remoteok.com" + job.get("url", ""),
-                        "score": score_job(title, job.get("company", ""), "Remote")
+                        "location": location,
+                        "link": link,
+                        "score": score
                     })
 
     except:
         pass
 
 
-# =========================
+# ==========================================
+# REMOTIVE
+# ==========================================
+
+def fetch_remotive():
+
+    print("Remotive...")
+
+    try:
+
+        res = requests.get("https://remotive.com/api/remote-jobs")
+        data = res.json()
+
+        for job in data["jobs"]:
+
+            title = job["title"]
+            company = job["company_name"]
+            location = job["candidate_required_location"]
+            link = job["url"]
+
+            if is_perfect_match(title, company, location):
+
+                score = calculate_score(title, company, location)
+
+                jobs.append({
+                    "company": company,
+                    "role": title,
+                    "location": location,
+                    "link": link,
+                    "score": score
+                })
+
+    except:
+        pass
+
+
+# ==========================================
+# GREENHOUSE (BEST PRODUCT COMPANIES)
+# ==========================================
+
+def fetch_greenhouse():
+
+    print("Greenhouse...")
+
+    companies = [
+        "vercel",
+        "supabase",
+        "stripe",
+        "shopify",
+        "postman",
+        "razorpay",
+        "careem",
+        "swiggy"
+    ]
+
+    for company in companies:
+
+        try:
+
+            url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
+
+            res = requests.get(url)
+            data = res.json()
+
+            for job in data["jobs"]:
+
+                title = job["title"]
+                location = job["location"]["name"]
+                link = job["absolute_url"]
+
+                if is_perfect_match(title, company, location):
+
+                    score = calculate_score(title, company, location)
+
+                    jobs.append({
+                        "company": company.capitalize(),
+                        "role": title,
+                        "location": location,
+                        "link": link,
+                        "score": score
+                    })
+
+        except:
+            pass
+
+
+# ==========================================
 # YC STARTUPS
-# =========================
+# ==========================================
 
 def fetch_yc():
 
-    print("YC...")
+    print("YC Startups...")
 
     try:
 
@@ -322,33 +307,31 @@ def fetch_yc():
 
                 jobs.append({
                     "company": "YC Startup",
-                    "role": "Software Engineer",
+                    "role": "Frontend Engineer",
                     "location": "Remote",
                     "link": "https://www.ycombinator.com" + link,
-                    "score": 85
+                    "score": 90
                 })
 
     except:
         pass
 
 
-# =========================
-# RUN ALL SOURCES
-# =========================
+# ==========================================
+# RUN ALL
+# ==========================================
 
-fetch_linkedin()
-fetch_greenhouse()
-fetch_lever()
-fetch_remotive()
 fetch_remoteok()
+fetch_remotive()
+fetch_greenhouse()
 fetch_yc()
 
-print("Total raw jobs:", len(jobs))
+print("Raw jobs:", len(jobs))
 
 
-# =========================
+# ==========================================
 # REMOVE DUPLICATES
-# =========================
+# ==========================================
 
 unique = {}
 
@@ -357,22 +340,32 @@ for job in jobs:
 
 jobs = list(unique.values())
 
-print("Unique jobs:", len(jobs))
 
-
-# =========================
-# SORT BEST MATCH FIRST
-# =========================
+# ==========================================
+# SORT BEST MATCH
+# ==========================================
 
 jobs.sort(key=lambda x: x["score"], reverse=True)
 
 
-# =========================
+# ==========================================
+# KEEP ONLY BEST 25
+# ==========================================
+
+jobs = jobs[:25]
+
+
+print("Final jobs:", len(jobs))
+
+
+# ==========================================
 # BUILD EMAIL
-# =========================
+# ==========================================
 
 html = f"""
-<h2>Best Frontend / Software Jobs ({len(jobs)} found)</h2>
+<h2>Top 25 Best Matching Jobs For You</h2>
+
+<p>Based on your React, Next.js, Node.js experience</p>
 
 <table border="1" cellpadding="6">
 
@@ -385,7 +378,7 @@ html = f"""
 </tr>
 """
 
-for job in jobs[:300]:
+for job in jobs:
 
     html += f"""
 
@@ -396,19 +389,18 @@ for job in jobs[:300]:
 <td>{job['location']}</td>
 <td><a href="{job['link']}">Apply</a></td>
 </tr>
-
 """
 
 html += "</table>"
 
 
-# =========================
+# ==========================================
 # SEND EMAIL
-# =========================
+# ==========================================
 
 msg = MIMEText(html, "html")
 
-msg["Subject"] = f"Best Jobs {datetime.now().date()}"
+msg["Subject"] = f"Top 25 Jobs For Sahil - {datetime.now().date()}"
 msg["From"] = EMAIL
 msg["To"] = EMAIL
 
@@ -418,4 +410,4 @@ server.login(EMAIL, PASSWORD)
 server.send_message(msg)
 server.quit()
 
-print("Email sent successfully")
+print("Sent best 25 jobs")
