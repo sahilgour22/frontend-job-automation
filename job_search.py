@@ -1,42 +1,41 @@
 import requests
 import smtplib
+import os
 from email.mime.text import MIMEText
 from datetime import datetime
 
-# Your email credentials from GitHub Secrets
-import os
 EMAIL = os.environ['EMAIL']
 PASSWORD = os.environ['EMAIL_PASSWORD']
 
 jobs = []
 
-# Search Wellfound API (startup jobs)
-url = "https://api.ashbyhq.com/posting-api/job-board/wellfound"
-
+# RemoteOK API
 try:
-    response = requests.get(url)
+    response = requests.get("https://remoteok.com/api")
     data = response.json()
 
-    for job in data.get("jobs", []):
+    for job in data:
 
-        title = job.get("title", "").lower()
+        if isinstance(job, dict):
 
-        if any(keyword in title for keyword in ["frontend", "react", "ui", "front-end"]):
+            title = str(job.get("position", "")).lower()
 
-            jobs.append({
-                "company": job.get("companyName", "Startup"),
-                "role": job.get("title"),
-                "location": job.get("location", "Remote"),
-                "link": job.get("applyUrl"),
-                "keywords": "Frontend, React, UI, Product, Web",
-                "skills": "React, Next.js, TypeScript, CSS, API"
-            })
+            if any(x in title for x in ["frontend", "react", "front-end", "ui"]):
 
-except:
-    pass
+                jobs.append({
+                    "company": job.get("company", "Remote Company"),
+                    "role": job.get("position"),
+                    "location": "Remote",
+                    "link": f"https://remoteok.com{job.get('url','')}",
+                    "keywords": "Frontend, React, UI, Web, Product",
+                    "skills": "React, Next.js, TypeScript, CSS, API"
+                })
+
+except Exception as e:
+    print(e)
 
 
-# Build HTML table
+# Build email HTML
 html = """
 <h2>Daily Frontend Jobs</h2>
 <table border="1" cellpadding="5">
@@ -50,7 +49,8 @@ html = """
 </tr>
 """
 
-for job in jobs:
+for job in jobs[:50]:
+
     html += f"""
     <tr>
     <td>{job['company']}</td>
